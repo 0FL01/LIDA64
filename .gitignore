@@ -1,0 +1,17 @@
+# Toolkit working area: targets, outputs, snapshots (Evidence artifacts stay out of git)
+work/*
+!work/.gitkeep
+
+# Vendored REA checkout v6.4.0 — reference-only: it has its own .git, and adding it
+# here would record a broken gitlink (mode 160000) without .gitmodules
+rea/
+
+# Local caches and logs
+.cache/
+*.log
+# Python bytecode caches (created by tools/model_vs_capture.py runs)
+__pycache__/
+
+# Rust build artifacts under ui/ (Cargo.lock is *not* ignored: it pins egui versions
+# the way the Dockerfile ARG-block pins REA/Ghidra)
+ui/*/target/

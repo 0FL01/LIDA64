@@ -1,0 +1,35 @@
+[package]
+name = "aida64-ui-theme"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "Measured AIDA64-Extreme dark-theme tokens + egui 0.36.2 style overrides (pixel-perfect Linux port prep)"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+egui = "=0.36.2"
+
+[dev-dependencies]
+# Offscreen GPU raster gate (`tests/gpu_snapshot.rs`). egui_kittest's own adapter selector prefers
+# software rasterizers (`egui_kittest-0.36.2/src/wgpu.rs:37-63`), and this host ships lavapipe
+# (`/usr/share/vulkan/icd.d/lvp_icd.json` + `libvulkan_lvp.so`), so the gate runs on a real
+# Vulkan device without a display. `image` is needed to name the readback type `image::RgbaImage`;
+# its default features stay off because `image = "0.25"` with defaults demands `exr`, which is not
+# in the local registry index cache (measured: `work/aida64/logs/ui-test-17.err`), and
+# `default-features = false` matches `egui_kittest`'s own usage (`Cargo.toml:128-131`).
+egui_kittest = { version = "=0.36.2", features = ["snapshot", "wgpu"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+# Direct dep for the textured GPU lane (`render_scene_with_textures`): `egui_wgpu` is already
+# pinned in `Cargo.lock` transitively via `egui_kittest`'s wgpu feature (measured: egui-wgpu
+# 0.36.2 + wgpu 30.0.1 there ⇒ resolves offline from the local cache), but must be declared
+# explicitly because `tests/gpu_snapshot.rs` names its types.
+egui-wgpu = "=0.36.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"

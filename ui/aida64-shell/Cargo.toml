@@ -1,0 +1,29 @@
+[package]
+name = "aida64-shell"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "eframe shell painting the measured AIDA64 chrome (wgpu now; egui_glow lane next per plan)"
+publish = false
+
+[dependencies]
+# Pinned like the theme crate (Cargo.lock = pin source). eframe default features pull the wgpu
+# renderer (`wgpu` ⇒ `wgpu_no_default_features`, which is what gates `run_native` in
+# `eframe/src/lib.rs:286` — measured), so no special feature flags are needed. The locally
+# unpacked `egui_glow-0.36.2` (measured in the registry src) serves the later glow lane.
+eframe = "=0.36.2"
+# Regular dep (not dev): the tree glyph PNG is decoded at RUNTIME from the gitignored atlas
+# evidence dir (AGENTS rule 10: binaries never committed). `png` feature only — image's default
+# `default-formats` pulls `exr` which is absent from the local cache (measured `ui-test-17.err`).
+image = { version = "0.25", default-features = false, features = ["png"] }
+aida64-ui-theme = { path = "../aida64-theme" }
+# `egui_extras` deliberately NOT added yet: the log-list Table row pitch is unmeasured (backlog),
+# so the Table lane stays out until measured (rule 11: no fabricated geometry).
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"

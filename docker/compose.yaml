@@ -1,0 +1,25 @@
+# nutcracker RE toolkit - one service, CLI-only topology.
+# No ports are published: REA's MCP transport is stdio and this environment is
+# driven through `docker compose run` recipes (see ../recipes/).
+services:
+  rea:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nutcracker-rea:latest
+    # Ghidra ships the native decompiler for linux_x86_64; REA verifies the
+    # binary's own executable header, so the guest must be x86_64.
+    platform: linux/amd64
+    # JVM heap (GHIDRA_HEADLESS_MAXMEM=2G is baked in the image) plus Ghidra native
+    # memory and the Node process family need headroom.
+    # Compose v5 validates this key (service `memory`/`mem` are rejected); suffixes
+    # such as 6g are accepted, so: REA_MEM=6g make analyze ...
+    mem_limit: ${REA_MEM:-4294967296}
+    volumes:
+      # Analysis targets, snapshots and Evidence outputs: host-visible and
+      # machine-portable because every recipe uses the same /work/... path.
+      - ../work:/work
+      # REA cache/state (~/.rea) survives container restarts.
+      - rea_home:/root/.rea
+volumes:
+  rea_home: {}
