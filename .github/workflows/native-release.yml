@@ -1,0 +1,217 @@
+name: Native packages
+
+on:
+  push:
+    branches:
+      - '**'
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      release_date: ${{ steps.meta.outputs.release_date }}
+    steps:
+      - name: Compute version
+        id: meta
+        run: |
+          echo "version=0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "release_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Restore Rust cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains/1.96.1-x86_64-unknown-linux-gnu
+            ~/.rustup/downloads
+          key: rust-home-1.96.1-${{ hashFiles('ui/**/Cargo.lock') }}
+          restore-keys: rust-home-1.96.1-
+      - name: Restore target cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ui/aida64-theme/target
+            ui/aida64-shell/target
+          key: checks-target-1.96.1-${{ hashFiles('ui/**/Cargo.lock') }}
+          restore-keys: checks-target-1.96.1-
+      - name: Install build and offscreen-render dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils build-essential cmake gettext libdbus-1-dev libdrm-dev libegl-dev \
+            libgbm-dev libgl-dev libudev-dev libvulkan-dev libwayland-dev libx11-dev \
+            libxcb1-dev libxcursor-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            lld mesa-vulkan-drivers patchelf pkg-config python3-venv
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal --component clippy --component rustfmt
+          rustup default 1.96.1
+      - name: Rust formatting
+        run: |
+          cargo fmt --manifest-path ui/aida64-theme/Cargo.toml --all --check
+          cargo fmt --manifest-path ui/aida64-shell/Cargo.toml --all --check
+      - name: Clippy
+        run: |
+          cargo clippy --locked --manifest-path ui/aida64-theme/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path ui/aida64-shell/Cargo.toml --all-targets -- -D warnings
+      # The atlas icon test reads a gitignored runtime asset from work/ (rule 10: no
+      # binaries in git), so it runs in the dev environment only; CI skips exactly it.
+      - name: Theme crate tests
+        env:
+          RUST_TEST_THREADS: '1'
+        run: >-
+          cargo test --locked --manifest-path ui/aida64-theme/Cargo.toml
+          -- --skip gpu_composition_icon_texel_perfect
+      - name: Shell crate tests
+        run: cargo test --locked --manifest-path ui/aida64-shell/Cargo.toml
+
+  native:
+    needs: [metadata]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.metadata.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Restore Rust cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains/1.96.1-x86_64-unknown-linux-gnu
+            ~/.rustup/downloads
+          key: rust-home-1.96.1-${{ hashFiles('ui/**/Cargo.lock') }}
+          restore-keys: rust-home-1.96.1-
+      - name: Restore shell target cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ui/aida64-shell/target
+          key: native-target-1.96.1-${{ hashFiles('ui/**/Cargo.lock') }}
+          restore-keys: native-target-1.96.1-
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils build-essential cmake gettext libdbus-1-dev libdrm-dev libegl-dev \
+            libgbm-dev libgl-dev libudev-dev libvulkan-dev libwayland-dev libx11-dev \
+            libxcb1-dev libxcursor-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            lld mesa-vulkan-drivers patchelf pkg-config python3-venv
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal
+          rustup default 1.96.1
+      - name: Build release binary
+        run: cargo build --locked --release --manifest-path ui/aida64-shell/Cargo.toml
+      - name: Package release archive
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/aida64-shell-$VERSION"
+          mkdir -p "$stage"
+          strip ui/aida64-shell/target/release/aida64-shell -o "$stage/aida64-shell"
+          cat > "$stage/README.md" <<'EOF'
+          # aida64-shell (LIDA64)
+
+          Pixel-measured AIDA64 dark-theme window skeleton built with egui/eframe
+          (wgpu renderer; a glow lane is planned).
+
+          ## Runtime requirements
+          - Linux with X11 or Wayland
+          - Vulkan or OpenGL drivers (wgpu renderer)
+
+          ## Running
+          ./aida64-shell
+
+          Optional icon atlas: set AIDA64_ATLAS_DIR to a directory that contains
+          aida_icons10.dll_dib_16x16_32bpp_comp0_pal0_BGRA-alpha_92.png (16x16 tree
+          glyph). Without it the shell prints a notice and renders chrome without
+          icon ink. Atlas binaries are not distributed with this release.
+
+          ## Status
+          Measured skeleton: titlebar, toolbar, tree with selection ring, scrollbar
+          slot with arrows, central panel. Not composed yet (capture backlog): tab
+          strip, ribbon, log-list body, statusbar; text uses the built-in egui font.
+          EOF
+          tar -czf "$RUNNER_TEMP/aida64-shell-$VERSION-linux-amd64.tar.gz" \
+            -C "$RUNNER_TEMP" "aida64-shell-$VERSION"
+      - name: Upload release archive
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: aida64-shell-linux-amd64
+          path: ${{ runner.temp }}/aida64-shell-*-linux-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [metadata, checks, native]
+    if: github.ref == 'refs/heads/master' && needs.checks.result == 'success' && needs.native.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: lida64-native-release
+      queue: max
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.metadata.outputs.version }}
+    steps:
+      - name: Checkout pinned source tree
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check release eligibility
+        id: eligibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to replace a published release" >&2
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+          elif gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Git tag $tag already exists; refusing to attach a release to an existing tag" >&2
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download release archive
+        if: steps.eligibility.outputs.release_needed == 'true'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          path: ${{ runner.temp }}/release-assets
+      - name: Create draft release and publish asset
+        if: steps.eligibility.outputs.release_needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          asset="$(find "$RUNNER_TEMP/release-assets" -name '*.tar.gz' -print -quit)"
+          if [[ -z "$asset" ]]; then
+            echo "No release archive found in artifacts" >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "LIDA64 shell $VERSION" \
+            --notes "Pixel-measured AIDA64 dark-theme shell skeleton (titlebar, toolbar, tree with selection ring, scrollbar slot, central panel). See README inside the archive for runtime requirements (X11/Wayland + Vulkan or GL; optional AIDA64_ATLAS_DIR icon atlas - atlas binaries are not distributed)."
+          gh release upload "$tag" "$asset"
+          gh release edit "$tag" --draft=false --latest=true
