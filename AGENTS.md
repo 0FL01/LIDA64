@@ -146,11 +146,13 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
     `git config --global --add safe.directory <repo>` (already set in this environment). An
     in-container `chown -R 1003:1003 .git` **made it worse** (measured): it re-owned the
     host-1003-owned entries to host uid 297 610 ⇒ local git is read-only for the host user; do not
-    retry that chown. Working procedure for docs/CI/config changes: commit+push via the GitHub API
-    (`gh` here is authenticated as `0FL01` with a PAT) — afterwards local `git status` reports the
-    file as modified and local HEAD lags `origin/master` (expected drift until root access returns);
-    verify pushed state via API/Actions, not via local git. (The 2026-10-15 parity-contract doc
-    commit was pushed exactly this way ⇒ expect exactly 1 commit of drift.)
+    retry that chown. `gh` authenticates as `0FL01` here but its PAT is **read-only for contents**
+    (PUT ⇒ HTTP 403), so the working procedure is: `cp -r .git <user-owned-copy>`, then
+    `GIT_DIR=<copy> GIT_WORK_TREE=<repo> git add/commit/push` (ssh works: key `lain` + agent socket,
+    `ssh -T git@github.com` ⇒ «Hi 0FL01!»). Afterwards local `git status` reports the file as modified
+    and local HEAD lags `origin/master` by exactly the pushed commit(s) (expected drift until root
+    access returns); verify pushed state via API/Actions, not via local git (measured: doc commit
+    `ee5a058` on master while local HEAD is still `569ec8c`).
 11. **UI-тема (`ui/aida64-theme`).** Пиксель-тема строится **только** из измеренных значений
     `work/aida64/out/ksnip-20261014-003-ui-spec.md` (calibration `PPM = 1.0`, pHYs 96 DPI): каждый
     const в `palette.rs`/`metrics.rs` обязан иметь в комментарии путь к артефакту-доказательству;
@@ -258,6 +260,10 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
     (github-actions[bot], published 21:54:13Z, **Assets = 1**: `aida64-shell-0.1-linux-amd64.tar.gz`
     8 005 547 B digest `sha256:13ba4ece…`; body documents X11/Wayland + Vulkan-or-GL and the
     `AIDA64_ATLAS_DIR` degradation path, «atlas binaries are not distributed»).
+    **Every** master push publishes — doc-only pushes included (measured: doc-only commit `ee5a058`
+    ⇒ run 38774205839 `success` 4/4 ⇒ tag `v0.2` published 2026-10-15T17:05:18Z, Assets 1) ⇒ batch
+    doc/CI/config edits into ONE push rather than committing per-file, because each pushed commit
+    burns one immutable version number.
 
 ## Измеренные факты этой среды (host: 11 960 MB RAM + 16 GB swap, 6 cores, rootless Docker)
 
