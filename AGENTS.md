@@ -1,12 +1,28 @@
 # AGENTS.md — nutcracker RE toolkit (agent-facing contract)
 
-Repo: минимальная Docker-only среда реверс-инжиниринга (первый target — AIDA64 Extreme portable).
-На хосте нужны **только Docker + Compose v2 + GNU make**. Всё остальное (Node, JDK, Ghidra, `rea`,
-`upx`, `jq`, `rg`, `file`, `binutils`, `procps`) — в образе `nutcracker-rea:latest` (2.73 GB).
+**Project goal (contract, user-fixed): полный клон AIDA64 — native Linux; Windows полностью вне
+scope** (ни Wine, ни VM, ни Windows-only APIs; feature-подсистемы реализуются на Linux-источниках).
+**Parity = два равных, одинаково обязательных контура:** (1) **visual/frontend parity** — пиксельная
+геометрия/палитра/типографика UI AIDA64 (rule 11: measurement-first, evidence-артефакт на каждую
+константу; UI-контракт = `ui/aida64-theme`); (2) **feature parity** — тот же user-visible функционал
+(inventory/sensors/benchmarks/log-graph/licensing), realized на Linux-источниках; feature-контракт
+извлекается из RE-артефактов (driver IOCTL map, `aida_bench64.dll`, strings), а feature-статус ledger =
+`PLAN.md`. Closing-claim на любом контуре без evidence-артефакта = fail-closed.
+Measured status (2026-10-14/15): visual parity = chrome-bands + tree-selection + 16×16 atlas-icon
+done (local gate 57 tests + golden 30 `[PASS]`); window/statusbar real geometry, log-list row pitch,
+font/ClearType fringe, hover/pressed/unchecked states, tab-strip/ribbon = OPEN (PLAN §Open blockers ⇒
+новые captures нужны). Feature parity = engine **not started** (shell рисует chrome без data-model);
+Linux-сенсор/MSR/PCI/I-O subsystems = следующая лента.
+
+RE-среда: минимальная Docker-only среда реверс-инжиниринга (первый target — AIDA64 Extreme portable).
+На хосте для неё нужны **только Docker + Compose v2 + GNU make**; Rust-красты `ui/*` собираются
+host-side cargo'ом (`CARGO_HOME=/home/opencode/.cargo`, local registry cache, toolchain 1.95+).
+Всё остальное (Node, JDK, Ghidra, `rea`, `upx`, `jq`, `rg`, `file`, `binutils`, `procps`) — в образе
+`nutcracker-rea:latest` (2.73 GB).
 
 `rea/` — vendored REA checkout v6.4.0 (reference-код). **Его не редактировать**; для правил по REA-коду
 и его тестам читается `rea/AGENTS.md`. Этот файл описывает только toolkit-слой (`docker/`, `Makefile`,
-`recipes/`, `PLAN.md`, `work/`).
+`recipes/`, `PLAN.md`, `ui/`, `.github/`, `work/`).
 
 ## Layout
 
@@ -23,6 +39,7 @@ Repo: минимальная Docker-only среда реверс-инжинир�
 | `PLAN.md` | contract: done-criteria с измеренными доказательствами, out-of-scope, evidence-лог |
 | `ui/aida64-theme/` | Rust-краст пиксель-темы AIDA64 (egui `=0.36.2`): `src/{palette,metrics,style,paint,widgets,compose}.rs` + `tests/{pixel_grid,gpu_snapshot}.rs` (CPU-растровый+GPU device-px геймы контракта); все константы = измеренные значения из `work/aida64/out/ksnip-20261014-003-ui-spec.md` |
 | `ui/aida64-shell/` | eframe-краст AIDA64-окна (wgpu по default-features; glow-lane позже): `src/main.rs` = runtime-Atlas-load winner-глиф → `paint_aida64_chrome`; compile-gate без дисплея; пиксель-контракт живёт в `ui/aida64-theme` |
+| `.github/workflows/native-release.yml` | CI-pipeline `metadata` → (`checks` ∥ `native`) → `publish` (Rust 1.96.1, `--locked`; push ⇒ checks+build, master-push ⇒ GitHub release `v<run>` = rule 12) |
 | `work/` | gitignored: targets, Evidence JSON, snapshots, logs (`work/<target>/out|analysis|logs`) |
 
 ## Канонические команды
@@ -45,6 +62,8 @@ make pin-check                                                      # reproduce-
 cd ui/aida64-theme && CARGO_HOME=/home/opencode/.cargo cargo build && cargo test \
   && cargo clippy --all-targets && cargo fmt --check                # оффлайн-гейм UI-темы (57 tests: 31 unit incl. compose+icon + 12 CPU-raster + 12 GPU + 2 doctest)
 cd ui/aida64-shell && CARGO_HOME=/home/opencode/.cargo cargo build && cargo clippy --all-targets && cargo fmt --check   # eframe shell (no display ⇒ compile-gate; window run = backlog)
+cargo test --locked --manifest-path ui/aida64-theme/Cargo.toml    # CI-identical (env RUST_TEST_THREADS=1; CI skips only gpu_composition_icon_texel_perfect)
+cargo test --locked --manifest-path ui/aida64-shell/Cargo.toml    # CI shell-lane (no test targets ⇒ compile-only pass, НЕ parity-доказательство)
 cd ui/aida64-theme && cargo test --test gpu_snapshot -- --test-threads=1   # GPU-lane в serialization
 cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-сверка модели с captures
 ```
@@ -116,7 +135,22 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
    `inspect-go-binary` (main-only) — не promising его в recipes.
 10. **Commit hygiene.** Never commit binaries/targets/Evidence (`work/*` gitignored, `!work/.gitkeep`);
     `rea/` — submodule-like vendored checkout, status must stay clean (`git -C rea status --porcelain`
-    empty); repo-root `.git` was created by `git init -q` during implementation (no commits yet).
+    empty). **Repo-root git state (measured 2026-10-15): commits EXIST** — origin
+    `git@github.com:0FL01/LIDA64.git` (ssh), branch `master`; history at write-time = 2 commits
+    («chore: initial import…» + «ci: add native-release workflow…» = `569ec8c`), tree clean+synced,
+    `git tag -l` **empty locally** — tag `v0.1` exists only on GitHub (created by the publish job).
+    **Host uid 1003 cannot run `git commit` here (measured):** `.git/COMMIT_EDITMSG`, `.git/logs`,
+    `.git/refs/*` and `.git/objects/??` fanouts are uid-0-owned, there is no sudo, and the rootless
+    idmap maps container-uid 0 to a host uid ~297 610 ⇒ `git commit` dies with
+    `could not open '.git/COMMIT_EDITMSG': Permission denied`; even reads need
+    `git config --global --add safe.directory <repo>` (already set in this environment). An
+    in-container `chown -R 1003:1003 .git` **made it worse** (measured): it re-owned the
+    host-1003-owned entries to host uid 297 610 ⇒ local git is read-only for the host user; do not
+    retry that chown. Working procedure for docs/CI/config changes: commit+push via the GitHub API
+    (`gh` here is authenticated as `0FL01` with a PAT) — afterwards local `git status` reports the
+    file as modified and local HEAD lags `origin/master` (expected drift until root access returns);
+    verify pushed state via API/Actions, not via local git. (The 2026-10-15 parity-contract doc
+    commit was pushed exactly this way ⇒ expect exactly 1 commit of drift.)
 11. **UI-тема (`ui/aida64-theme`).** Пиксель-тема строится **только** из измеренных значений
     `work/aida64/out/ksnip-20261014-003-ui-spec.md` (calibration `PPM = 1.0`, pHYs 96 DPI): каждый
     const в `palette.rs`/`metrics.rs` обязан иметь в комментарии путь к артефакту-доказательству;
@@ -147,7 +181,8 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
     a CPU-lane contract only. `Ui::painter()` returns `&Painter` (`egui-0.36.2/src/ui.rs:458`) —
     write `p`, not `&p`. Concurrent lavapipe devices SIGSEGV the test process (`ui-test-29.err`), so
     `render_scene` holds a module `Mutex`; `--test-threads=1` is the fallback. `cargo clippy --fix`
-    needs `--allow-dirty` (repo root has zero commits). `ctx.tessellate` panics "No fonts loaded" on
+    needs `--allow-dirty` (measured under the then-zero-commit history; the repo now has commits —
+    a dirty tree still requires it, verify state with `git log --oneline`). `ctx.tessellate` panics "No fonts loaded" on
     a pristine context → prime with an empty `run_ui` pass first.
     **Textured lane (measured, ui-test-41..64):** kittest `Harness::render()` never applies
     `TexturesDelta`, egui 0.36 drains alloc-deltas DURING `run_ui` (`load_texture` = manager-alloc
@@ -203,6 +238,26 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
     ⇒ crate models endpoints + `GRADIENT_DITHER_AMPLITUDE` 4; no skin bitmap exists to embed.
     Caveat: when the compose image rebuilds, `make pe-resources` stdout gets docker bake-progress
     prepended → strip to the first `{` before jq or pre-build the image.
+12. **CI/release contract (measured: workflow blob + Actions run 38643113955 + release API).**
+    Pipeline `metadata` → (`checks` ∥ `native`) → `publish`, triggered by push to **any** branch
+    (`on push '**'`); `publish` gated on `refs/heads/master` + both needs success + concurrency
+    `lida64-native-release` queue.max + an eligibility step that refuses when `v<run>` release/tag
+    already exists ⇒ version `0.$GITHUB_RUN_NUMBER` is **immutable** (bump it by pushing, never by
+    hand; local `git tag -l` is empty — tags live on GitHub only). CI toolchain pinned **Rust 1.96.1**
+    (rustup-minimal + clippy/rustfmt, cache keyed on `ui/**/Cargo.lock` + toolchain 1.96.1) while
+    crates declare `rust-version 1.95` (newer satisfies); CI runs **`--locked`** ⇒ the committed
+    `Cargo.lock` is the CI pin source (analog of the Dockerfile `ARG`-block; bump deps by editing
+    Cargo.toml + regenerating the lock locally, never in CI). GPU-lane **runs in CI** (apt installs
+    `mesa-vulkan-drivers` ⇒ lavapipe) with `RUST_TEST_THREADS=1`, but CI skips **exactly one** local
+    contract test (`gpu_composition_icon_texel_perfect`) because atlas PNGs are gitignored ⇒ the
+    local 57-test gate stays the only proof of texel-perfect icon. `cargo test` on `ui/aida64-shell`
+    is a no-op pass (the crate has no test targets) ⇒ shell pixel/feature behavior is **compile-only**
+    verified in CI; never claim runtime or feature parity from a green pipeline. Artifact = stripped
+    release binary + a heredoc README (no atlas PNGs). Measured outcome of sha `569ec8c`: run
+    38643113955 `success` 4/4 jobs, 0 failed steps ⇒ release «LIDA64 shell 0.1» tag `v0.1`
+    (github-actions[bot], published 21:54:13Z, **Assets = 1**: `aida64-shell-0.1-linux-amd64.tar.gz`
+    8 005 547 B digest `sha256:13ba4ece…`; body documents X11/Wayland + Vulkan-or-GL and the
+    `AIDA64_ATLAS_DIR` degradation path, «atlas binaries are not distributed»).
 
 ## Измеренные факты этой среды (host: 11 960 MB RAM + 16 GB swap, 6 cores, rootless Docker)
 
@@ -223,8 +278,9 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
   ~20-24 ms, resource `type` field не string → не `ascii_downcase`'ить в jq); image 2.73 GB;
   available RAM dips to ~2.5 GB during a 51 MB PE auto-analysis (with `MEM=6g MAXMEM=2G`) + swap usage —
   raise `MEM`/lower `MAXMEM` if OOM/`cleanup_incomplete`.
-- Out of scope по решениям пользователя: MCP/agent-тотология (stdio-only), GUI/noVNC, динамика AIDA64
-  (Wine/Windows-VM/remote `frida-server`), extended tools (pwntools, gdb+pwndbg, JADX, apktool, tshark,
+- Out of scope по решениям пользователя: **Windows как product-платформа** (клон = native Linux;
+  Wine/Windows-VM/remote `frida-server` — только RE-инструменты, не product path), MCP/agent-тотология
+  (stdio-only), GUI/noVNC, динамика AIDA64, extended tools (pwntools, gdb+pwndbg, JADX, apktool, tshark,
   sigrok-cli, binwalk/unblob, WABT, mitmdump, adb, Chrome), IDA/Hopper/JEB, Ghidra NativeAOT,
   source-build REA из `./rea`, REA fixture lanes, multi-arch.
 
@@ -243,7 +299,8 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
    scoped doctor+ELF cold/warm) → 4. `make selftest` (full contract incl. PE/UPX + boundaries) →
 5. engine-free targets (`pe-resources`, `bytes`, `offset`, `analysis-view` incl. inverted failure) →
 6. cold/warm analysis runs на target'е как background jobs + `rg` на `"durationMs":` →
-7. `git -C rea status --porcelain` empty, `make chown` в конце.
+7. `git -C rea status --porcelain` empty **and** repo-root `git status --porcelain` clean +
+   `git status -sb` shows synced with `origin/master`; `make chown` в конце.
 8. при правках `ui/aida64-theme/`: `CARGO_HOME=/home/opencode/.cargo cargo build && cargo test &&
    cargo clippy --all-targets && cargo fmt --check` (31 unit incl. compose+icon tests + 12 CPU-raster
    + 12 GPU + 2 doctests = 57 green, clippy warning-free; logs в `work/aida64/logs/ui-*.err`). GPU-ожидания правятся только
@@ -251,5 +308,10 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
    runs/counts + `target/gpu-debug*.png`; composition expectations from `gpu_composition_dump`); golden-сверка `python3 tools/model_vs_capture.py` →
    `work/aida64/out/ui-golden-vs-captures.txt`. Expectations from the spec-§5 measurements or a
    fresh dump only.
+9. CI-зеркало локально: `cargo test --locked --manifest-path ui/aida64-theme/Cargo.toml` при
+   `RUST_TEST_THREADS=1` (CI пропускает ровно `gpu_composition_icon_texel_perfect` ⇒ local gate =
+   полные 57 остаётся authority) и `cargo test --locked --manifest-path ui/aida64-shell/Cargo.toml`
+   (no-op pass). После push'а CI/release-состояние читается **через GitHub** (`gh run list`/Actions API,
+   `gh release view <tag>` или release API) — локальных tags не существует (rule 12).
 Expectations must come from measured behavior/docs, never from a guess; failures must stay explainable
 (suject error JSON written to the target's stdout file is the primary evidence).
