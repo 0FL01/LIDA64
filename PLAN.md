@@ -36,8 +36,8 @@ checkpoint-лестнице (§Checkpoints) и ledger'у (§Feature-parity ledge
 | CP-0 | RE-toolkit substrate (критерии 1–7 выше) + этапы B/C | `make selftest` exit 0 (`SELFTEST FULL PASSED`), build-gate `SELFTEST CORE PASSED`, `git -C rea status --porcelain` empty, `make pin-check` exit 0 | **DONE** | — |
 | CP-1 | UI-контракт substrate: 57-test гейм + golden-сверка | `cargo build && cargo test && cargo clippy --all-targets && cargo fmt --check` = 57 green (31 unit + 12 CPU-raster + 12 GPU + 2 doctest), clippy 0 warnings, fmt clean; `python3 tools/model_vs_capture.py` exit 0 → **30 `[PASS]`** (`work/aida64/out/ui-golden-vs-captures.txt`) | **DONE** | GPU-ожидания правятся только fresh dump'ом |
 | CP-2 | Контракт-doc-sync: цель + dual parity + CI/release-facts + checkpoint-лестница + ledger в `PLAN.md`/`README.md`/`AGENTS.md` | grep-gates: цель-строка («native Linux», «Windows … вне scope») и «Parity» присутствуют в `PLAN.md` и `README.md`; заголовки `## Checkpoints` и `## Feature-parity ledger` присутствуют; ledger ≥ 6 строк, каждая с evidence-требованием; после push'а CI `success` + tag published | **DONE** (этот push) | self-verifiable: см. Evidence log (runs/releases) |
-| CP-3 | Feature-contract извлечение: фича → Windows-механика → Linux-источник | артефакт `work/aida64/out/feature-contract.md` (пишется container-side, path `/work/aida64/out/…`, см. CP-15) с ≥ 8 feature-rows; каждая row ссылается на существующий артефакт (`test -f` по каждому cite); counts сверяются с `out/analyze-aida64.unpacked.exe.json` (procedures **51 971**, strings **98 359**) и `out/kerneld-x64.sys-driver-map.md` (pci-cfg 72 / phys-io 20 / porthw 14 / msr 6) | NOT-STARTED | write-blocker CP-15 |
-| CP-4 | Linux data-source readers (инвентарь: CPUID/PCI/hwmon/ports) = engine slice #1 | `cargo test --locked` green на fixture-based reader-тестах (fixtures repo-tracked) + measured host-inventory артефакт: `ls /sys/bus/pci/devices \| wc -l` = **10**, `grep -c '^processor' /proc/cpuinfo` = **6**, `/sys/class/hwmon/hwmon*` dirs = **0** (cooling_device = 4), `/dev/cpu` = **absent** | NOT-STARTED | MSR/реальные сенсоры require host с `/dev/cpu/*/msr` + perms (этого хоста не хватает) |
+| CP-3 | Feature-contract извлечение: фича → Windows-механика → Linux-источник | артефакт `work/aida64/out/feature-contract.md` (host-side writes восстановлены — CP-15 DONE) с ≥ 8 feature-rows; каждая row ссылается на существующий артефакт (`test -f` по каждому cite); counts сверяются с `out/analyze-aida64.unpacked.exe.json` (procedures **51 971**, strings **98 359**) и `out/kerneld-x64.sys-driver-map.md` (pci-cfg 72 / phys-io 20 / porthw 14 / msr 6) | NOT-STARTED | нет write-blocker'а; требует `test -f` cross-check по citation'ам |
+| CP-4 | Linux data-source readers (инвентарь: CPUID/PCI/hwmon/ports/DMI) = engine slice #1 | `cargo test --locked` green на fixture-based reader-тестах (fixtures repo-tracked) + measured host-inventory артефакт: `/sys/bus/pci/devices` = **10** (first = Intel `0x8086:0x1237`, `config`/`vendor`/`device` readable unprivileged), `/proc/cpuinfo` processors = **6**, `/sys/class/dmi/id/*` values readable (`product_name` = `KVM Server`), `/sys/class/hwmon` = **0 entries** (glob `cooling_device*` fail'ит today; an earlier probe saw 4 ⇒ re-measure), `/sys/class/thermal` = 0 zones | NOT-STARTED | MSR/физические порты/сенсоры require privileged-или-physical host: `/dev/cpu` absent (msr module не loaded), `/dev/port` = `crw-r----- root kmem`, `sudo` needs password, KVM guest ⇒ here только CPUID/PCI/DMI + fixture-лента |
 | CP-5 | Реальная геометрия окна/statusbar + 2× HiDPI captures | новые capture-файлы в `work/aida64/incoming/` + `probe.py` output (dims/pHYs записан) + spec §updated + `cargo test` green с новыми asserts + golden rerun `[PASS]` ≥ 30 | **BLOCKED** | user-provided captures (Windows-рендер = measurement-инструмент, не product-runtime) |
 | CP-6 | Chrome completeness: tab-strip/ribbon/statusbar composition | `src/compose.rs` даёт bands по capture-координатам + GPU asserts green по fresh dump'у + golden count не падает | **BLOCKED** | CP-5 |
 | CP-7 | Log-list body rows через `egui_extras` Table | `Cargo.lock` содержит `egui_extras` 0.36.2 (measured: crate есть в offline-кеше `CARGO_HOME`, `--locked` resolves) + row-pitch измерен по CP-5 capture'ам + CPU/GPU asserts + golden row-count | **BLOCKED** | CP-5 |
@@ -47,8 +47,8 @@ checkpoint-лестнице (§Checkpoints) и ledger'у (§Feature-parity ledge
 | CP-11 | Inventory-дерево с реальными узлами | tree-ноды = CP-4 device list; selection-ring контракт остаётся green (`gpu_composition_bands_and_scrollbar` + `pixel_grid`) | NOT-STARTED | CP-4, CP-6 |
 | CP-12 | Benchmarks parity (`aida_bench64.dll`: PE32+ console x86-64) | **user-supplied** baseline (Windows-run вне product-scope ⇒ числа из артефакта/документа) + Rust-реализация + tolerance-assert (Δ% измерен и задокументирован) | NOT-STARTED | baseline evidence от user'а |
 | CP-13 | Licensing/registration UX | либо decision в §Out of scope, либо реализация с gate (license-file/ENV parsed + unit test) | **OPEN** | решение user'а |
-| CP-14 | Release/CI discipline | каждый `master`-push: CI `success` + tag `v<run>` published (measured `v0.1`…`v0.3`); версия immutable (`0.$GITHUB_RUN_NUMBER`); `git -C rea status --porcelain` empty | **DONE** (continuous) | doc-only push'и тоже burn'ят version (см. AGENTS rule 12) |
-| CP-15 | Write/ownership environment | gate: artifact-пути host-writable ИЛИ writes container-side. measured 2026-10-15: `work/*` = uid 0, `make chown` → `chown: changing ownership of '/work': Operation not permitted` ⇒ host-uid 1003 **не может** писать в `work/` | **OPEN** | root access отсутствует (нет sudo); workaround: container-side writes / user-owned dirs |
+| CP-14 | Release/CI discipline | каждый `master`-push: CI `success` + tag `v<run>` published (measured `v0.1`…`v0.4`); версия immutable (`0.$GITHUB_RUN_NUMBER`); `git -C rea status --porcelain` empty | **DONE** (continuous) | doc-only push'и тоже burn'ят version (см. AGENTS rule 12) |
+| CP-15 | Write/ownership environment | gate: host-side write probe + container-mapping probe. **DONE (restored 2026-10-15 evening)**: `work/*` = `drwxrwxr-x 1003:1003`, `touch`/`rm` в `work/aida64/out` OK; container-uid-0 writes host-visible как `1003:1003 644` ⇒ evidence-артефакты writable с обеих сторон. (Ранее в тот же день: uid-0-owned + `make chown` EPERM = blocked, state (a)) | **DONE** | нет root-required work; **session-dependent** ⇒ мерить `stat -c %u:%g` + write-probe перед артефакт-writes |
 
 ## Feature-parity ledger (открыт 2026-10-15; пустой, но явный)
 
@@ -102,13 +102,17 @@ CP → **evidence-требование**. `DONE` только с evidence-арт
 - Ghidra-архив сам содержит Windows-PE артефакты (`docs/GhidraClass/ExerciseFiles/WinhelloCPP/WinHelloCPP.exe`) →
   PE/UPX-контракт проверяется **без downloads и без host-инсталляций**; UPX 4.2.4 round-trip не byte-identical
   (110592 → 62464 → 110592 B, ratios 56.48%) → сравниваем содержимое анализа, не digests.
-- Ownership/idmap (measured; **меняется между daemon-сессиями**): Docker здесь **rootless**. Сегодня
-  container uid 0 ↔ host uid **297 610** (а не host-uid `1003`), host-uid 1003 вне idmap-range ⇒
-  host-side writes в `work/*` (uid-0-owned) **невозможны**, `make chown` fail'ит (measured 2026-10-15:
-  `chown: changing ownership of '/work': Operation not permitted`), artifact/log-записи идут либо
-  container-side (`/work/<target>/…`), либо в user-owned dirs. `sudo` на хосте отсутствует
-  («a password is required»). in-container `chown -R 1003:1003` не «чинит» ownership, а
-  re-ownership'ит host-1003-файлы в host-uid 297 610 (measured) ⇒ повторять его нельзя.
+- Ownership/idmap (measured; **меняется между daemon-сессиями** ⇒ мерить `stat -c %u:%g`): Docker здесь
+  **rootless**, host-uid = 1003. Два состояния, измеренные 2026-10-15: **(a) uid-blocked** — container
+  uid 0 ↔ host uid **297 610**, host-uid вне idmap-range ⇒ host-side writes в `work/*` (uid-0-owned)
+  **невозможны**, `make chown` → `chown: changing ownership of '/work': Operation not permitted`,
+  artifact/log-записи шли container-side (`/work/<target>/…`) или в user-owned dirs. **(b) restored
+  (вечером, после operator-fix)** — `work/*` = `drwxrwxr-x 1003:1003`, host-side writes проверены
+  (`touch`+`rm` в `work/aida64/out` OK) и файл, созданный container-uid 0, host видит как
+  `1003:1003 644` (probe `/work/_map-probe`) ⇒ evidence-артефакты writable с обеих сторон. `sudo` на
+  хосте отсутствует («a password is required») ⇒ ownership-fix только operator-side. in-container
+  `chown -R 1003:1003` не «чинит» ownership, а re-ownership'ит host-1003-файлы на mapped-uid
+  (measured в (a)) ⇒ повторять его нельзя.
 - REA-ограничения, учтённые в рецептах: PE load-image attestation `unsupported`; pseudocode ≠ оригинальный source;
   metadata-annotации ephemeral (discarded вместе с ephemeral project); CLI-`--json` = **один Evidence record**,
   bundles — только из `export_evidence_bundle`/saved bundle (иначе `evidence-export`/`compare` fail closed);
@@ -162,8 +166,9 @@ CP → **evidence-требование**. `DONE` только с evidence-арт
   Deps resolvable из `CARGO_HOME=/home/opencode/.cargo` (registry-источники egui/eframe/egui_glow/
   wgpu/egui_kittest распакованы); GPU-dev-путь требует `image` c `default-features = false` (дефолтный
   `default-formats` тянет `exr`, которого нет в локальном index-кеше — `ui-test-17.err`); network egress
-  работает (`ui-test-18/19`); `cargo clippy --fix` требует `--allow-dirty` (measured тогда: repo had
-  0 commits; сегодня commits есть, но host-uid не может писать в `.git` ⇒ fix-lane только в scratch-копии).
+  работает (`ui-test-18/19`); `cargo clippy --fix` требует `--allow-dirty` при dirty tree (measured при
+  0-commit history; сегодня tree clean и `.git` host-writable ⇒ fix-lane работает ordinary'но —
+  мерить `git status --porcelain` перед ней).
 - GPU-lane (`tests/gpu_snapshot.rs`, 9 tests) рисует через headless **lavapipe**
   (`/usr/share/vulkan/icd.d/lvp_icd.json`); `RendererOptions::PREDICTABLE` → determinism запечатлён
   тестом `gpu_raster_is_reproducible_run_to_run` (two independent harnesses → identical images).
@@ -318,8 +323,11 @@ rootless/Docker profiles и multi-arch образ.
 - Push на любую ветку ⇒ checks + `native`-артефакт; push в `master` ⇒ release `v<run-number>` (immutable,
   bump-only-by-push). Архив = stripped bin + README **без atlas-PNG** ⇒ runtime-деградация по
   `AIDA64_ATLAS_DIR` (measured release body: «atlas binaries are not distributed»).
-- Host/git-ограничения: `AGENTS.md` rules 10–12 (host-uid не может `git commit` ⇒ push из user-owned
-  копии `.git`; `work/*` uid-0-owned ⇒ writes container-side).
+- Host/git-ограничения **session-dependent** (measured оба состояния 2026-10-15): `AGENTS.md` rules 6/10.
+  В uid-blocked state push шёл из user-owned копии `.git` по ssh, writes — только container-side.
+  В writable state (измерен сегодня) `git commit`/`git fetch`/`git reset --hard origin/master`
+  ordinary'ные ⇒ **перед** work'ом мерить `git status -sb` + `stat -c %u:%g work/aida64/out`, а
+  pushed-состояние post-push проверять через Actions/release API (tags локальны только после fetch).
 
 ### Evidence log — checkpoint-период 2026-10-15 (measured)
 
@@ -333,11 +341,42 @@ rootless/Docker profiles и multi-arch образ.
 - Push-процедура (measured): host-uid 1003 `git commit` → `could not open '.git/COMMIT_EDITMSG':
   Permission denied`; `gh` contents-PUT → HTTP 403 «Resource not accessible by personal access token»;
   working path = `cp -r .git <user-owned-copy>` + `GIT_DIR=<copy> GIT_WORK_TREE=<repo> git add/commit/push`
-  (ssh: `ssh -T git@github.com` → «Hi 0FL01!»); локальный HEAD остаётся `569ec8c` (drift documented,
-  AGENTS rule 10).
-- Gate-числа среды (используются CP-4/CP-7/CP-9/CP-15): `ls /sys/bus/pci/devices | wc -l` = **10**;
-  `grep -c '^processor' /proc/cpuinfo` = **6**; `/sys/class/hwmon/hwmon*` dirs = **0** (4 `cooling_device*`);
-  `/dev/cpu` = **absent** (MSR-лента требует host с msr-module + perms); `Xvfb`/`xvfb-run` = **not found**
-  (CP-9 blocked); `upx` на host absent (in-image); `egui_extras-0.36.2` **есть** в offline-кеше
-  `CARGO_HOME` ⇒ CP-7 Table-лента resolves без network; `make chown` → `chown: changing ownership of
-  '/work': Operation not permitted` (CP-15 OPEN).
+  (ssh: `ssh -T git@github.com` → «Hi 0FL01!»); локальный HEAD тогда оставался `569ec8c`
+  (drift documented, AGENTS rule 10; cleared позже в тот же день — см. подраздел ниже).
+- Gate-числа среды (используются CP-4/CP-7/CP-9/CP-15; measurement при открытии checkpoints,
+  2026-10-15 day): `/sys/bus/pci/devices` = **10**; `/proc/cpuinfo` processors = **6**;
+  `/sys/class/hwmon/hwmon*` dirs = **0** (тот probe видел 4 `cooling_device*`, сегодня glob
+  fail'ит ⇒ re-measure); `/dev/cpu` = **absent** (MSR-лента требует host с msr-module + perms);
+  `Xvfb`/`xvfb-run` = **not found** (CP-9 blocked); `upx` на host absent (in-image);
+  `egui_extras-0.36.2` **есть** в offline-кеше `CARGO_HOME` ⇒ CP-7 Table-лента resolves без network;
+  `make chown` → `chown: changing ownership of '/work': Operation not permitted` (CP-15 OPEN на тот момент).
+
+### Evidence log — restore прав + git-reconciliation (2026-10-15 evening, measured)
+
+- Ownership/writer access восстановлены operator-side (rootless idmap снова container-0 ↔ host 1003):
+  `work/*` = `drwxrwxr-x opencode opencode` (`1003:1003`); host-side write probe в `work/aida64/out`
+  (`touch` + `ls -l` + `rm`) = OK; mapping probe (`docker run --rm -v <repo>/work:/work busybox:1.37`
+  создаёт `/work/_map-probe` как container-uid 0) ⇒ host видит файл как `1003:1003 644` и может его
+  удалить. `make chown` больше не обязателен для host-видимости; `sudo -n` по-прежнему
+  «a password is required» (no root).
+- Git writer-access восстановлен: `.git/COMMIT_EDITMSG` (070), `.git/HEAD`, `.git/index` = owner
+  `opencode` ⇒ `touch .git/_perm-probe` OK. Reconciliation chain: `git ls-remote --tags origin` =
+  `v0.1`→`569ec8c`, `v0.2`→`ee5a058`, `v0.3`→`e50cfb6`, `v0.4`→`0df65b6`; `git fetch --tags` ⇒
+  local tags `v0.1…v0.4`; local HEAD был `569ec8c` + staged-stale `AGENTS.md` blob ⇒
+  `git reset --hard refs/remotes/origin/master` ⇒ HEAD = `0df65b6`, `git status --porcelain` empty,
+  `git status -sb` = synced с `origin/master`; `git -C rea status --porcelain` empty.
+- Release-chain post-`0df65b6`: Actions run `38781281003` `completed success` (`metadata`/`native`/
+  `checks`/`publish` = success, publish updated 2026-10-15T17:57:01Z); release list = `v0.4` @
+  `0df65b6` (published 17:57:01Z), `v0.3` @ `e50cfb6`, `v0.2` @ `ee5a058`, `v0.1` @ `569ec8c` —
+  **Assets = 1** каждый ⇒ version-churn evidence для batch-policy (AGENTS rule 12, CP-14).
+- Capability-map замеры (CP-4 gates): `uname` = `Linux nc-lab 6.12.86+deb13-amd64` (KVM guest:
+  `/sys/class/dmi/id/product_name` = `KVM Server`, `bios_vendor` = `netcup`, `chassis_type` = 1;
+  dmi-файлы `-r--r--r-- root`, values читаются unprivileged); PCI unprivileged OK (10 devices,
+  `config` первые байты = `86 80 37 12` = Intel `0x8086:0x1237` host bridge); `/sys/class/hwmon` =
+  **0** entries сегодня, `/sys/class/thermal` = 0 zones; `/dev/cpu` absent (`lsmod` даёт только
+  `intel_rapl_msr` + `intel_rapl_common`, module `msr` не loaded); `/dev/port` = `crw-r----- root kmem`
+  ⇒ MSR/physical port I/O require `modprobe msr` + perms (root-only) ⇒ MSR/sensor/port-ленты
+  executables только на privileged или physical host.
+- Следствие для ladder'а (обновлено этим же commit'ом): **CP-15 → DONE**, CP-3 write-blocker снят,
+  CP-4 gate-числа/допуски переписаны (PCI/DMI/CPUID + fixture-лента here; MSR/sensors/ports — не here);
+  CP-5/CP-9/CP-12/CP-13 остаются user-input gates (captures/display/baseline/licensing-решение).

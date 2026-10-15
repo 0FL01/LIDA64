@@ -115,12 +115,16 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
    `make chown` = `chown -R 0:0 /work` inside → host sees your uid. Chown к хост-uid *внутри* контейнера
    попадает на ДРУГОЙ хост-uid (offset mapping) и ломает host-side writes. Root-run daemon → host:
    `sudo chown -R <you> work`. Host-side `mkdir` в `work/` допустим только когда `work/` host-owned
-   (`make workdirs` использует host `mkdir`). **idmap меняется между daemon-сессиями — мерить каждый раз
-   (2026-10-15 measured: container uid 0 ↔ host uid 297 610, not `1003`)** ⇒ `make chown` fail'ит
-   (`chown: changing ownership of '/work': Operation not permitted`), `work/*` = uid-0-owned, host-uid
-   writes в `work/` (включая UI-логи) невозможны, sudo absent; artifact/log-записи → container-side
-   (`/work/<target>/logs|out`) или user-owned dirs (`$TMPDIR`). in-container `chown -R 1003:1003`
-   re-ownership'ит host-1003-файлы в 297 610 (measured) — это не repair, не использовать.
+   (`make workdirs` использует host `mkdir`). **idmap меняется между daemon-сессиями — мерить каждый раз**
+   (`stat -c %u:%g` до/после container- writes; measured два состояния в один день): **(a) uid-blocked**:
+   container uid 0 ↔ host 297 610 ⇒ `work/*` = uid-0-owned, `make chown` →
+   `chown: changing ownership of '/work': Operation not permitted`, host-side writes в `work/`
+   невозможны ⇒ артефакты container-side (`/work/<target>/…`) или `$TMPDIR`. **(b) restored** (после
+   operator-fix, measured): `work/*` = `drwxrwxr-x 1003:1003`, host-side writes проверены (`touch`/`rm`
+   OK) и файл, созданный container-uid 0, host видит как `1003:1003 644` ⇒ rule-6 flow работает снова.
+   `sudo` здесь требует пароль (no root) ⇒ ownership fix = operator-side. in-container
+   `chown -R 1003:1003` re-ownership'ит host-1003-файлы на mapped-uid (measured в state (a)) —
+   это не repair, не использовать.
 7. **Timing/observing.** REA пишет pino-JSON в **stderr** (`"durationMs":`, `"status":"ok"`) — stdout чист
    для `--json`. Capture: `… >/dev/null 2>work/<t>/logs/x.err` затем **`rg -o '"durationMs":[0-9.]+'`**
    (ripgrep: host 14.1.1 и **в образе** с этого commit'а; `grep` — banned for scanning, медленный на big files).
@@ -141,23 +145,23 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
 10. **Commit hygiene.** Never commit binaries/targets/Evidence (`work/*` gitignored, `!work/.gitkeep`);
     `rea/` — submodule-like vendored checkout, status must stay clean (`git -C rea status --porcelain`
     empty). **Repo-root git state (measured 2026-10-15): commits EXIST** — origin
-    `git@github.com:0FL01/LIDA64.git` (ssh), branch `master`; history at write-time = 2 commits
-    («chore: initial import…» + «ci: add native-release workflow…» = `569ec8c`), tree clean+synced,
-    `git tag -l` **empty locally** — tag `v0.1` exists only on GitHub (created by the publish job).
-    **Host uid 1003 cannot run `git commit` here (measured):** `.git/COMMIT_EDITMSG`, `.git/logs`,
-    `.git/refs/*` and `.git/objects/??` fanouts are uid-0-owned, there is no sudo, and the rootless
-    idmap maps container-uid 0 to a host uid ~297 610 ⇒ `git commit` dies with
-    `could not open '.git/COMMIT_EDITMSG': Permission denied`; even reads need
-    `git config --global --add safe.directory <repo>` (already set in this environment). An
-    in-container `chown -R 1003:1003 .git` **made it worse** (measured): it re-owned the
-    host-1003-owned entries to host uid 297 610 ⇒ local git is read-only for the host user; do not
-    retry that chown. `gh` authenticates as `0FL01` here but its PAT is **read-only for contents**
-    (PUT ⇒ HTTP 403), so the working procedure is: `cp -r .git <user-owned-copy>`, then
-    `GIT_DIR=<copy> GIT_WORK_TREE=<repo> git add/commit/push` (ssh works: key `lain` + agent socket,
-    `ssh -T git@github.com` ⇒ «Hi 0FL01!»). Afterwards local `git status` reports the file as modified
-    and local HEAD lags `origin/master` by exactly the pushed commit(s) (expected drift until root
-    access returns); verify pushed state via API/Actions, not via local git (measured: doc commit
-    `ee5a058` on master while local HEAD is still `569ec8c`).
+    `git@github.com:0FL01/LIDA64.git` (ssh), branch `master`; release-tags `v0.1…v0.4` создаёт
+    publish-job на GitHub, локально они появляются только после `git fetch --tags` (measured: до fetch
+    `git tag -l` = empty, после = `v0.1 v0.2 v0.3 v0.4`). **Writer-access is session-dependent
+    (measured both states in one day):** in the uid-blocked state host-uid 1003 could not `git commit`
+    (`.git/COMMIT_EDITMSG`, `.git/logs`, `.git/refs/*`, `.git/objects/??` fanouts were uid-0-owned; no
+    sudo) ⇒ `could not open '.git/COMMIT_EDITMSG': Permission denied`; an in-container
+    `chown -R 1003:1003 .git` **made it worse** (it re-owned host-1003 entries onto the mapped uid) ⇒
+    do not retry that chown. Reads always need `git config --global --add safe.directory <repo>`
+    (already set here). Fallback for the blocked state: `cp -r .git <user-owned-copy>` +
+    `GIT_DIR=<copy> GIT_WORK_TREE=<repo> git add/commit/push` over ssh (key `lain` + agent socket;
+    `ssh -T git@github.com` ⇒ «Hi 0FL01!»); `gh` authenticates as `0FL01` but its PAT is
+    **read-only for contents** (PUT ⇒ HTTP 403 «Resource not accessible by personal access token»).
+    In the writable state (measured: `git fetch` + `git reset --hard refs/remotes/origin/master`
+    succeeded ⇒ HEAD == `origin/master` with a clean tree) commit normally and clear any drift with
+    that same fetch+reset. **In both states:** measure live state (`git log --oneline`,
+    `git status -sb`, `git ls-remote --tags origin`) before acting, and after a copy/API push verify
+    pushed state via Actions/release API rather than local git.
 11. **UI-тема (`ui/aida64-theme`).** Пиксель-тема строится **только** из измеренных значений
     `work/aida64/out/ksnip-20261014-003-ui-spec.md` (calibration `PPM = 1.0`, pHYs 96 DPI): каждый
     const в `palette.rs`/`metrics.rs` обязан иметь в комментарии путь к артефакту-доказательству;
@@ -289,6 +293,18 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
   ~20-24 ms, resource `type` field не string → не `ascii_downcase`'ить в jq); image 2.73 GB;
   available RAM dips to ~2.5 GB during a 51 MB PE auto-analysis (with `MEM=6g MAXMEM=2G`) + swap usage —
   raise `MEM`/lower `MAXMEM` if OOM/`cleanup_incomplete`.
+- Host feature-parity capability map (measured 2026-10-15 evening; `Linux nc-lab 6.12.86+deb13-amd64`,
+  KVM guest: `/sys/class/dmi/id/product_name` = `KVM Server`, `bios_vendor` = `netcup`,
+  `chassis_type` = 1): unprivileged inventory-источники working = `/proc/cpuinfo` (6 processors),
+  `/sys/bus/pci/devices` (10; `config`/`vendor`/`device` readable, first = Intel `0x8086:0x1237`),
+  `/sys/class/dmi/id/*` (values readable, files `-r--r--r-- root`). Недоступно здесь:
+  `/sys/class/hwmon` = **0 entries** (glob `cooling_device*` fail'ит today — an earlier probe saw
+  `cooling_device0..3` ⇒ measure again before use), `/sys/class/thermal` = 0 zones, `/dev/cpu/*` absent
+  (`msr` module не loaded — `lsmod` даёт только `intel_rapl_msr`/`intel_rapl_common`),
+  `/dev/port` = `crw-r----- root kmem` ⇒ MSR/physical port I/O требуют `modprobe msr` + perms
+  (root-only; `sudo` здесь требует пароль). UI-гейты: `Xvfb`/`xvfb-run` absent (window run), `upx` на
+  host absent (in-image only), `egui_extras 0.36.2` **есть** в `CARGO_HOME` cache ⇒ Table-lane
+  offline-resolvable.
 - Out of scope по решениям пользователя: **Windows как product-платформа** (клон = native Linux;
   Wine/Windows-VM/remote `frida-server` — только RE-инструменты, не product path), MCP/agent-тотология
   (stdio-only), GUI/noVNC, динамика AIDA64, extended tools (pwntools, gdb+pwndbg, JADX, apktool, tshark,

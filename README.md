@@ -9,7 +9,7 @@ Substrate цели: минимальная Docker-only RE-среда — на х
 (`CARGO_HOME=/home/opencode/.cargo`). `./rea` — REA checkout v6.4.0 как reference-код; он
 **не изменялся** этим work. CI/release: `.github/workflows/native-release.yml`
 (`metadata` → `checks` ∥ `native` → `publish`, Rust 1.96.1, `--locked`); push в `master`
-⇒ GitHub release `v<run>` (measured: `v0.1`…`v0.3`, 1 asset each).
+⇒ GitHub release `v<run>` (measured: `v0.1`…`v0.4`, 1 asset each — version = run number, bump only by push).
 
 Agent-facing контракт (правила, measured facts, layout, check ladder): **[`AGENTS.md`](AGENTS.md)**.
 Contract со статусом и доказательствами: **[`PLAN.md`](PLAN.md)**.
@@ -24,7 +24,7 @@ make selftest                                     # full self-proof (ELF + Windo
 make unpack SRC=aida64.exe                        # upx -d -> aida64.unpacked.exe (source bytes untouched)
 TIMEOUT=1800000 MEM=6g SNAPSHOT=aida64-unpacked.json TARGET=aida64 BIN=AIDA64/aida64.unpacked.exe make analyze
 make function NAME=entry SNAPSHOT=aida64-unpacked.json   # dossier: pseudocode+assembly+callers+callees+refs
-make chown                                        # вернуть файлы host-пользователю (на текущем хосте fail'ит — см. PLAN §Ownership/idmap)
+make chown                                        # idmap-зависимо: measured EPERM в uid-blocked daemon-сессии, OK после restore ⇒ мерить stat -c %u:%g (PLAN §Ownership/idmap)
 # UI-красты (host cargo, offline-кеш CARGO_HOME):
 cd ui/aida64-theme && cargo build && cargo test && cargo clippy --all-targets && cargo fmt --check   # 57 tests green
 cd ui/aida64-theme && python3 tools/model_vs_capture.py   # golden-сверка → work/aida64/out/ui-golden-vs-captures.txt (30 PASS)
@@ -50,6 +50,10 @@ cd ui/aida64-shell && cargo build && cargo clippy --all-targets && cargo fmt --c
   только статический анализ; **Windows как product-платформа вне scope** (клон = native Linux),
   GUI/extended-tools/MCP-агент-тотология вне scope (решения пользователя). Прогресс по цели фиксируется
   **только** checkpoint-гейтами и ledger'ом в [`PLAN.md`](PLAN.md) — «почти готово» без evidence не считается.
+- Writer/ownership state **session-dependent** (rootless idmap + owner of `work/` и `.git`; measured
+  оба состояния 2026-10-15): если host-uid не может писать в `work/` или `.git` — procedure в
+  [`AGENTS.md`](AGENTS.md) rules 6/10; drift local-HEAD чистится `git fetch` +
+  `git reset --hard refs/remotes/origin/master` (tags — `git fetch --tags`).
 
 ## Licenses (short)
 
