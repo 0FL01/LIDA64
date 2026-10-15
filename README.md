@@ -1,8 +1,15 @@
 # nutcracker — Docker-only RE toolkit (первый target: AIDA64 Extreme)
 
-Минимальная среда реверс-инжиниринга: на хосте нужен **только Docker + Compose v2** (+ GNU make для
-рецептов). Node, JDK, Ghidra, `rea`, `upx`, `jq`, `rg`, `file`, `binutils`, `procps` — внутри образа.
-`./rea` — REA checkout v6.4.0 как reference-код; он **не изменялся** этим work.
+**Продуктовая цель: полный клон AIDA64 — native Linux** (Windows-платформа вне scope), с двумя
+одинаково обязательными контурами parity: **visual/frontend** (пиксельная геометрия/палитра/
+типографика UI AIDA64) и **feature** (тот же user-visible функционал на Linux-источниках).
+Substrate цели: минимальная Docker-only RE-среда — на хосте для неё нужен **только Docker + Compose v2**
+(+ GNU make для рецептов); Node, JDK, Ghidra, `rea`, `upx`, `jq`, `rg`, `file`, `binutils`, `procps` —
+внутри образа. UI-красты (`ui/aida64-theme`, `ui/aida64-shell`) собираются host-side cargo'ом
+(`CARGO_HOME=/home/opencode/.cargo`). `./rea` — REA checkout v6.4.0 как reference-код; он
+**не изменялся** этим work. CI/release: `.github/workflows/native-release.yml`
+(`metadata` → `checks` ∥ `native` → `publish`, Rust 1.96.1, `--locked`); push в `master`
+⇒ GitHub release `v<run>` (measured: `v0.1`…`v0.3`, 1 asset each).
 
 Agent-facing контракт (правила, measured facts, layout, check ladder): **[`AGENTS.md`](AGENTS.md)**.
 Contract со статусом и доказательствами: **[`PLAN.md`](PLAN.md)**.
@@ -17,7 +24,11 @@ make selftest                                     # full self-proof (ELF + Windo
 make unpack SRC=aida64.exe                        # upx -d -> aida64.unpacked.exe (source bytes untouched)
 TIMEOUT=1800000 MEM=6g SNAPSHOT=aida64-unpacked.json TARGET=aida64 BIN=AIDA64/aida64.unpacked.exe make analyze
 make function NAME=entry SNAPSHOT=aida64-unpacked.json   # dossier: pseudocode+assembly+callers+callees+refs
-make chown                                        # вернуть файлы host-пользователю
+make chown                                        # вернуть файлы host-пользователю (на текущем хосте fail'ит — см. PLAN §Ownership/idmap)
+# UI-красты (host cargo, offline-кеш CARGO_HOME):
+cd ui/aida64-theme && cargo build && cargo test && cargo clippy --all-targets && cargo fmt --check   # 57 tests green
+cd ui/aida64-theme && python3 tools/model_vs_capture.py   # golden-сверка → work/aida64/out/ui-golden-vs-captures.txt (30 PASS)
+cd ui/aida64-shell && cargo build && cargo clippy --all-targets && cargo fmt --check   # compile-gate; window run = display backlog
 ```
 
 ## Recipes (подробно)
@@ -36,7 +47,9 @@ make chown                                        # вернуть файлы ho
 - Pins (Node 24.18.0, JDK 21.0.12.1+1, Ghidra 12.1.4, `rea-agents` 6.4.0) живут в `ARG`-блоке
   `docker/Dockerfile`; обновление: `make pin` → `make build` → `make selftest`.
 - AIDA64 как Windows-приложение здесь не запускается (REA process-capture требует Linux/macOS host) —
-  только статический анализ; GUI/extended-tools/MCP-агент-тотология вне scope (решения пользователя).
+  только статический анализ; **Windows как product-платформа вне scope** (клон = native Linux),
+  GUI/extended-tools/MCP-агент-тотология вне scope (решения пользователя). Прогресс по цели фиксируется
+  **только** checkpoint-гейтами и ledger'ом в [`PLAN.md`](PLAN.md) — «почти готово» без evidence не считается.
 
 ## Licenses (short)
 

@@ -1,9 +1,16 @@
 # PLAN — Docker RE toolkit (`nutcracker`), первый target: AIDA64
 
-Репозиторийный контракт для одной возобновляемой цели: минимальная среда реверс-инжиниринга,
-где на хосте нужен **только Docker + Compose v2** (Node/Java/Ghidra/`upx`/`rea` — внутри образа),
-а рецепты переносимы между машинами. Реализация завершена и измерена (см. Evidence log);
-`./rea` (REA v6.4.0 checkout) остаётся reference-кодом и **не изменялся**.
+Репозиторийный контракт для одной возобновляемой цели. **Продуктовая цель (зафиксирована user'ом
+2026-10-15): полный клон AIDA64 — native Linux; Windows-платформа вне scope** (ни Wine, ни VM, ни
+Windows-only API — product-подсистемы строятся на Linux-источниках; Windows-артефакты остаются
+in-scope как RE-инструмент). **Parity = два равных, одинаково обязательных контура** (top-of-file
+контракт в `AGENTS.md`): (1) **visual/frontend parity** — пиксельная геометрия/палитра/типографика
+UI AIDA64; (2) **feature parity** — тот же user-visible функционал (inventory/sensors/benchmarks/
+log-graph/licensing) на Linux-источниках. RE-контракт ниже (7 критериев + этапы B/C) — **substrate**
+этой цели, а не self-цель. Closing-claim на любом контуре без evidence-артефакта (measurement/spec/
+test) = fail-closed. Реализация substrate завершена и измерена (см. Evidence log); `./rea`
+(REA v6.4.0 checkout) остаётся reference-кодом и **не изменялся**. Проверка прогресса — только по
+checkpoint-лестнице (§Checkpoints) и ledger'у (§Feature-parity ledger).
 
 ## Контракт: 7 критериев done (все выполнены, проверено в этой среде)
 
@@ -16,6 +23,49 @@
 | 5 | `./rea` untouched; новый код только в `docker/`, `Makefile`, `recipes/`, `README.md`, `.gitignore`, `work/.gitkeep` | DONE | `git -C rea status --porcelain` пустой |
 | 6 | На хосте не нужны Node/Java/Ghidra/upx/jq — каждый рецепт = `docker compose run` (и GNU make) | DONE | `make doctor/providers/capabilities/bytes/offset/analysis-view` executes `rea`+`jq` внутри контейнера |
 | 7 | MCP/GUI/extended-tools вне scope и зафиксированы | DONE | README + recipes + раздел «Out of scope» ниже |
+
+## Checkpoints (проверяемые finish-lines)
+
+Формат checkpoint'а: **goal → gate (конкретная команда/артефакт + ожидаемый измеренный результат) →
+статус → блоки**. Статусы: `DONE` (gate выполнен, измерен), `PARTIAL`, `NOT-STARTED`,
+`BLOCKED(<внешний input/право>)`, `OPEN (решение user'а)`. Статус меняется **только** fresh-доказательством
+(лог/артефакт/exit code), а gate — только измеренным поведением или документом; «правдоподобно» не считается.
+
+| CP | Goal | Gate (machine-verifiable) | Статус | Блоки/зависимости |
+| -- | ---- | ------------------------ | ------ | ----------------- |
+| CP-0 | RE-toolkit substrate (критерии 1–7 выше) + этапы B/C | `make selftest` exit 0 (`SELFTEST FULL PASSED`), build-gate `SELFTEST CORE PASSED`, `git -C rea status --porcelain` empty, `make pin-check` exit 0 | **DONE** | — |
+| CP-1 | UI-контракт substrate: 57-test гейм + golden-сверка | `cargo build && cargo test && cargo clippy --all-targets && cargo fmt --check` = 57 green (31 unit + 12 CPU-raster + 12 GPU + 2 doctest), clippy 0 warnings, fmt clean; `python3 tools/model_vs_capture.py` exit 0 → **30 `[PASS]`** (`work/aida64/out/ui-golden-vs-captures.txt`) | **DONE** | GPU-ожидания правятся только fresh dump'ом |
+| CP-2 | Контракт-doc-sync: цель + dual parity + CI/release-facts + checkpoint-лестница + ledger в `PLAN.md`/`README.md`/`AGENTS.md` | grep-gates: цель-строка («native Linux», «Windows … вне scope») и «Parity» присутствуют в `PLAN.md` и `README.md`; заголовки `## Checkpoints` и `## Feature-parity ledger` присутствуют; ledger ≥ 6 строк, каждая с evidence-требованием; после push'а CI `success` + tag published | **DONE** (этот push) | self-verifiable: см. Evidence log (runs/releases) |
+| CP-3 | Feature-contract извлечение: фича → Windows-механика → Linux-источник | артефакт `work/aida64/out/feature-contract.md` (пишется container-side, path `/work/aida64/out/…`, см. CP-15) с ≥ 8 feature-rows; каждая row ссылается на существующий артефакт (`test -f` по каждому cite); counts сверяются с `out/analyze-aida64.unpacked.exe.json` (procedures **51 971**, strings **98 359**) и `out/kerneld-x64.sys-driver-map.md` (pci-cfg 72 / phys-io 20 / porthw 14 / msr 6) | NOT-STARTED | write-blocker CP-15 |
+| CP-4 | Linux data-source readers (инвентарь: CPUID/PCI/hwmon/ports) = engine slice #1 | `cargo test --locked` green на fixture-based reader-тестах (fixtures repo-tracked) + measured host-inventory артефакт: `ls /sys/bus/pci/devices \| wc -l` = **10**, `grep -c '^processor' /proc/cpuinfo` = **6**, `/sys/class/hwmon/hwmon*` dirs = **0** (cooling_device = 4), `/dev/cpu` = **absent** | NOT-STARTED | MSR/реальные сенсоры require host с `/dev/cpu/*/msr` + perms (этого хоста не хватает) |
+| CP-5 | Реальная геометрия окна/statusbar + 2× HiDPI captures | новые capture-файлы в `work/aida64/incoming/` + `probe.py` output (dims/pHYs записан) + spec §updated + `cargo test` green с новыми asserts + golden rerun `[PASS]` ≥ 30 | **BLOCKED** | user-provided captures (Windows-рендер = measurement-инструмент, не product-runtime) |
+| CP-6 | Chrome completeness: tab-strip/ribbon/statusbar composition | `src/compose.rs` даёт bands по capture-координатам + GPU asserts green по fresh dump'у + golden count не падает | **BLOCKED** | CP-5 |
+| CP-7 | Log-list body rows через `egui_extras` Table | `Cargo.lock` содержит `egui_extras` 0.36.2 (measured: crate есть в offline-кеше `CARGO_HOME`, `--locked` resolves) + row-pitch измерен по CP-5 capture'ам + CPU/GPU asserts + golden row-count | **BLOCKED** | CP-5 |
+| CP-8 | Шрифт/TTF + ClearType-френджи (#202074/#BCFFDE/#994C20 vs egui grayscale AA) | артефакт `work/aida64/out/font-metrics.md` (glyph metrics из capture probe'а) + тест с **quantified** Δ (ожидание из fresh dump'а, не guess) + решение (embed-TTF / accept-delta) зафиксировано в PLAN/AGENTS | NOT-STARTED | CP-5 + TTF-license решение user'а |
+| CP-9 | Window run + renderer lane (wgpu сейчас, glow позже) | на display-capable хосте: `cargo run` + screenshots при PPM 1 и 2 + px-diff script против capture (численный Δ задокументирован); glow-вариант (`NativeOptions.renderer` Glow + feature) проходит тот же gate | **BLOCKED** | measured: `Xvfb`/`xvfb-run` absent на этом хосте; CI apt не содержит xvfb |
+| CP-10 | Sensor graph/log-panel с реальными данными | measured graph-pitch 10.0 px (evidence `ui-golden-vs-captures.txt`) + data-driven rows из CP-4 readers + CPU/GPU asserts на значениях (fabricated-ink запрещён) | NOT-STARTED | CP-4, CP-7 |
+| CP-11 | Inventory-дерево с реальными узлами | tree-ноды = CP-4 device list; selection-ring контракт остаётся green (`gpu_composition_bands_and_scrollbar` + `pixel_grid`) | NOT-STARTED | CP-4, CP-6 |
+| CP-12 | Benchmarks parity (`aida_bench64.dll`: PE32+ console x86-64) | **user-supplied** baseline (Windows-run вне product-scope ⇒ числа из артефакта/документа) + Rust-реализация + tolerance-assert (Δ% измерен и задокументирован) | NOT-STARTED | baseline evidence от user'а |
+| CP-13 | Licensing/registration UX | либо decision в §Out of scope, либо реализация с gate (license-file/ENV parsed + unit test) | **OPEN** | решение user'а |
+| CP-14 | Release/CI discipline | каждый `master`-push: CI `success` + tag `v<run>` published (measured `v0.1`…`v0.3`); версия immutable (`0.$GITHUB_RUN_NUMBER`); `git -C rea status --porcelain` empty | **DONE** (continuous) | doc-only push'и тоже burn'ят version (см. AGENTS rule 12) |
+| CP-15 | Write/ownership environment | gate: artifact-пути host-writable ИЛИ writes container-side. measured 2026-10-15: `work/*` = uid 0, `make chown` → `chown: changing ownership of '/work': Operation not permitted` ⇒ host-uid 1003 **не может** писать в `work/` | **OPEN** | root access отсутствует (нет sudo); workaround: container-side writes / user-owned dirs |
+
+## Feature-parity ledger (открыт 2026-10-15; пустой, но явный)
+
+Формат: feature-семья → Windows-механика (RE-evidence, measured) → Linux-источник (product) → статус →
+CP → **evidence-требование**. `DONE` только с evidence-артефактом; `NOT-STARTED` rows не дают права
+заявлять parity.
+
+| Feature-семья | Windows-механика (evidence) | Linux-источник (product) | Статус | CP | Evidence-требование |
+| ------------- | --------------------------- | ------------------------ | ------ | -- | ------------------- |
+| CPU inventory / CPUID + MSR | MSR allowlists: read **288** slots @`0x1e140`, write **84** @`0x1e5c0` (`out/bytes-kerneld-x64.sys-0x1e140.json`); CPUID-strings в `out/search-aida64.unpacked.exe.json` | `cpuid` instruction, `/proc/cpuinfo`, `/dev/cpu/N/msr` | NOT-STARTED | CP-4 | measured MSR-supported list + fixture-тесты (+ live-read на host с msr) |
+| PCI/PCIe inventory + config space | pci-cfg **72** IOCTL'а (`out/ioctl-map-kerneld-x64.sys.tsv`); helpers CF8/CFC `FUN_00011358`/`FUN_00011474` | `/sys/bus/pci/devices/*/{config,vendor,device}` | NOT-STARTED | CP-4 | fixture + live-host read proof (10 devices measured here) |
+| Physical I/O + port HW | phys-io **20**, porthw **14** IOCTL'а; port deny-list `FUN_000122d8` | `iopl(3)`/`ioperm` (требует CAP_SYS_IO) | NOT-STARTED | CP-4 | measured port-список + perms-probe output |
+| Sensor monitoring (temps/voltages/fans) | UI-shape измерен (captures/spec); Windows-backend не RE'd | `/sys/class/hwmon/*`, `/sys/class/thermal/*` | NOT-STARTED | CP-4/CP-10 | live-host sensor inventory (здесь hwmon-dirs = 0) + UI-маппинг |
+| Log/graph panel (CompuScope) | geometry measured: header row 24 px, graph pitch 10.0 px (`ui-golden-vs-captures.txt`), tree row 18 px | egui paint (DONE geometry) + CP-4 readers | **PARTIAL** (geometry/chrome only) | CP-10/CP-7 | data-driven asserts + measured row pitch |
+| Tree/navigation | measured ring **81×18**, row 18 px, step 19 (`ui-golden-vs-captures.txt`, spec §5) | `add_nested` exact depth (DONE geometry) | **PARTIAL** | CP-11 | реальный node-список из CP-4 |
+| Benchmarks (CPU/FP/memory bandwidth, SST) | `aida_bench64.dll` = PE32+ console x86-64 (PE-facts measured, `pe-resources-*.json`) | Rust bench-реализации | NOT-STARTED | CP-12 | user-supplied baseline + tolerance |
+| Reporting/export + licensing | `licens*` strings hit'ы в `out/search-aida64.unpacked.exe.json` | TBD (product-решение) | **OPEN** | CP-13 | decision + tests |
 
 ## Artefacts и entry points
 
@@ -52,9 +102,13 @@
 - Ghidra-архив сам содержит Windows-PE артефакты (`docs/GhidraClass/ExerciseFiles/WinhelloCPP/WinHelloCPP.exe`) →
   PE/UPX-контракт проверяется **без downloads и без host-инсталляций**; UPX 4.2.4 round-trip не byte-identical
   (110592 → 62464 → 110592 B, ratios 56.48%) → сравниваем содержимое анализа, не digests.
-- Ownership: Docker здесь **rootless** (measured): container uid 0 ↔ host uid владельца демона;
-  `make chown` (`chown -R 0:0 /work` внутри) возвращает файлы хост-пользователю; chown к хост-uid
-  внутри контейнера попадает на другой хост-uid (measured: host `297610` vs `1003`).
+- Ownership/idmap (measured; **меняется между daemon-сессиями**): Docker здесь **rootless**. Сегодня
+  container uid 0 ↔ host uid **297 610** (а не host-uid `1003`), host-uid 1003 вне idmap-range ⇒
+  host-side writes в `work/*` (uid-0-owned) **невозможны**, `make chown` fail'ит (measured 2026-10-15:
+  `chown: changing ownership of '/work': Operation not permitted`), artifact/log-записи идут либо
+  container-side (`/work/<target>/…`), либо в user-owned dirs. `sudo` на хосте отсутствует
+  («a password is required»). in-container `chown -R 1003:1003` не «чинит» ownership, а
+  re-ownership'ит host-1003-файлы в host-uid 297 610 (measured) ⇒ повторять его нельзя.
 - REA-ограничения, учтённые в рецептах: PE load-image attestation `unsupported`; pseudocode ≠ оригинальный source;
   metadata-annotации ephemeral (discarded вместе с ephemeral project); CLI-`--json` = **один Evidence record**,
   bundles — только из `export_evidence_bundle`/saved bundle (иначе `evidence-export`/`compare` fail closed);
@@ -108,7 +162,8 @@
   Deps resolvable из `CARGO_HOME=/home/opencode/.cargo` (registry-источники egui/eframe/egui_glow/
   wgpu/egui_kittest распакованы); GPU-dev-путь требует `image` c `default-features = false` (дефолтный
   `default-formats` тянет `exr`, которого нет в локальном index-кеше — `ui-test-17.err`); network egress
-  работает (`ui-test-18/19`); `cargo clippy --fix` только с `--allow-dirty` (в repo 0 commits).
+  работает (`ui-test-18/19`); `cargo clippy --fix` требует `--allow-dirty` (measured тогда: repo had
+  0 commits; сегодня commits есть, но host-uid не может писать в `.git` ⇒ fix-lane только в scratch-копии).
 - GPU-lane (`tests/gpu_snapshot.rs`, 9 tests) рисует через headless **lavapipe**
   (`/usr/share/vulkan/icd.d/lvp_icd.json`); `RendererOptions::PREDICTABLE` → determinism запечатлён
   тестом `gpu_raster_is_reproducible_run_to_run` (two independent harnesses → identical images).
@@ -203,8 +258,10 @@
 
 ## Out of scope (решения пользователя, зафиксированы)
 
-MCP/agent-тотология (stdio-only transport; CLI-рецепты выбраны), human GUI (Ghidra CodeBrowser/noVNC),
-динамика AIDA64 (Wine/Windows-VM/remote `frida-server`; `rea` process-capture не умеет Windows host),
+**Windows как product-платформа** (клон = native Linux; Wine/Windows-VM/remote `frida-server`
+допустимы только как RE/measurement-инструмент, не как product-runtime), MCP/agent-тотология
+(stdio-only transport; CLI-рецепты выбраны), human GUI (Ghidra CodeBrowser/noVNC),
+динамика AIDA64 (`rea` process-capture не умеет Windows host),
 extended capability tools (pwntools/gdb+pwndbg/JADX/apktool/tshark/sigrok/binwalk+unblob/wabt/mitmdump/adb/Chrome),
 IDA/Hopper/JEB providers, Ghidra NativeAOT extension, сборка REA из `./rea` checkout, fixture-lanes REA CI,
 rootless/Docker profiles и multi-arch образ.
@@ -249,3 +306,38 @@ rootless/Docker profiles и multi-arch образ.
   illustration arts, hairline dither pair только в 352×396 (4×) arts, MAD-таблицы glyph-match;
   `logs/hex-attribute.py` → coincidence-rate attribution len/2**24 (evidence
   `out/hex-hunt.txt`, `out/hex-attribute.txt`, `out/atlas-analysis.md`).
+
+## Verification lanes (CI-measured, 2026-10-14/15)
+
+- CI = `.github/workflows/native-release.yml` (`metadata` → `checks` ∥ `native` → `publish`) на Rust
+  **1.96.1** с `cargo fmt --check` + `cargo clippy --locked --all-targets -D warnings` +
+  `cargo test --locked` на обоих UI-крастах; GPU-lane в CI работает (apt `mesa-vulkan-drivers` ⇒ lavapipe,
+  `RUST_TEST_THREADS=1`), но CI пропускает ровно `gpu_composition_icon_texel_perfect` ⇒ **local-гейт
+  57 тестов остаётся authority** для texel-perfect icon; shell-краст = compile-only pass (`cargo test`
+  no-op) ⇒ window/feature-поведение CI НЕ проверяет, green CI ≠ parity-доказательство.
+- Push на любую ветку ⇒ checks + `native`-артефакт; push в `master` ⇒ release `v<run-number>` (immutable,
+  bump-only-by-push). Архив = stripped bin + README **без atlas-PNG** ⇒ runtime-деградация по
+  `AIDA64_ATLAS_DIR` (measured release body: «atlas binaries are not distributed»).
+- Host/git-ограничения: `AGENTS.md` rules 10–12 (host-uid не может `git commit` ⇒ push из user-owned
+  копии `.git`; `work/*` uid-0-owned ⇒ writes container-side).
+
+### Evidence log — checkpoint-период 2026-10-15 (measured)
+
+- CP-2 doc-sync: commits `ee5a058` («docs(AGENTS): pin Linux-clone goal + dual … parity contract…») →
+  `e50cfb6` (correction push-процедуры) на `master`; Actions runs `38774205839` и `38775631047` =
+  `completed success`; releases `v0.2` (published 2026-10-15T17:05:18Z) и `v0.3` (17:15:46Z), каждый
+  **Assets = 1** ⇒ doc-only push burn'ит immutable version ⇒ batch policy (AGENTS rule 12).
+- CI cargo-lanes на обоих doc-commits = green (тот же `checks` job) ⇒ UI-гейты CP-1 freshly verified
+  CI'ом, кроме `gpu_composition_icon_texel_perfect` (local-only по-прежнему; локальные latest числа:
+  `ui-test-65/66` = 57 green, `ui-clippy-18`, `ui-fmt-17`, `ui-golden-11` = 30 `[PASS]`).
+- Push-процедура (measured): host-uid 1003 `git commit` → `could not open '.git/COMMIT_EDITMSG':
+  Permission denied`; `gh` contents-PUT → HTTP 403 «Resource not accessible by personal access token»;
+  working path = `cp -r .git <user-owned-copy>` + `GIT_DIR=<copy> GIT_WORK_TREE=<repo> git add/commit/push`
+  (ssh: `ssh -T git@github.com` → «Hi 0FL01!»); локальный HEAD остаётся `569ec8c` (drift documented,
+  AGENTS rule 10).
+- Gate-числа среды (используются CP-4/CP-7/CP-9/CP-15): `ls /sys/bus/pci/devices | wc -l` = **10**;
+  `grep -c '^processor' /proc/cpuinfo` = **6**; `/sys/class/hwmon/hwmon*` dirs = **0** (4 `cooling_device*`);
+  `/dev/cpu` = **absent** (MSR-лента требует host с msr-module + perms); `Xvfb`/`xvfb-run` = **not found**
+  (CP-9 blocked); `upx` на host absent (in-image); `egui_extras-0.36.2` **есть** в offline-кеше
+  `CARGO_HOME` ⇒ CP-7 Table-лента resolves без network; `make chown` → `chown: changing ownership of
+  '/work': Operation not permitted` (CP-15 OPEN).

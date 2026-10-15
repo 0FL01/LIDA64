@@ -115,7 +115,12 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
    `make chown` = `chown -R 0:0 /work` inside → host sees your uid. Chown к хост-uid *внутри* контейнера
    попадает на ДРУГОЙ хост-uid (offset mapping) и ломает host-side writes. Root-run daemon → host:
    `sudo chown -R <you> work`. Host-side `mkdir` в `work/` допустим только когда `work/` host-owned
-   (`make workdirs` использует host `mkdir`).
+   (`make workdirs` использует host `mkdir`). **idmap меняется между daemon-сессиями — мерить каждый раз
+   (2026-10-15 measured: container uid 0 ↔ host uid 297 610, not `1003`)** ⇒ `make chown` fail'ит
+   (`chown: changing ownership of '/work': Operation not permitted`), `work/*` = uid-0-owned, host-uid
+   writes в `work/` (включая UI-логи) невозможны, sudo absent; artifact/log-записи → container-side
+   (`/work/<target>/logs|out`) или user-owned dirs (`$TMPDIR`). in-container `chown -R 1003:1003`
+   re-ownership'ит host-1003-файлы в 297 610 (measured) — это не repair, не использовать.
 7. **Timing/observing.** REA пишет pino-JSON в **stderr** (`"durationMs":`, `"status":"ok"`) — stdout чист
    для `--json`. Capture: `… >/dev/null 2>work/<t>/logs/x.err` затем **`rg -o '"durationMs":[0-9.]+'`**
    (ripgrep: host 14.1.1 и **в образе** с этого commit'а; `grep` — banned for scanning, медленный на big files).
@@ -309,7 +314,8 @@ cd ui/aida64-theme && python3 tools/model_vs_capture.py            # golden-св
    `git status -sb` shows synced with `origin/master`; `make chown` в конце.
 8. при правках `ui/aida64-theme/`: `CARGO_HOME=/home/opencode/.cargo cargo build && cargo test &&
    cargo clippy --all-targets && cargo fmt --check` (31 unit incl. compose+icon tests + 12 CPU-raster
-   + 12 GPU + 2 doctests = 57 green, clippy warning-free; logs в `work/aida64/logs/ui-*.err`). GPU-ожидания правятся только
+   + 12 GPU + 2 doctests = 57 green, clippy warning-free; logs в `work/aida64/logs/ui-*.err` — если `work/`
+   host-writable, иначе `$TMPDIR` (measured fail 2026-10-15 ⇒ rule 6)). GPU-ожидания правятся только
    после свежего dump'а (`cargo test --test gpu_snapshot gpu_debug -- --nocapture` → prints bbox/
    runs/counts + `target/gpu-debug*.png`; composition expectations from `gpu_composition_dump`); golden-сверка `python3 tools/model_vs_capture.py` →
    `work/aida64/out/ui-golden-vs-captures.txt`. Expectations from the spec-§5 measurements or a
